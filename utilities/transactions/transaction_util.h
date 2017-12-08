@@ -1,7 +1,7 @@
-// Copyright (c) 2015, Facebook, Inc.  All rights reserved.
-// This source code is licensed under the BSD-style license found in the
-// LICENSE file in the root directory of this source tree. An additional grant
-// of patent rights can be found in the PATENTS file in the same directory.
+// Copyright (c) 2011-present, Facebook, Inc.  All rights reserved.
+//  This source code is licensed under both the GPLv2 (found in the
+//  COPYING file in the root directory) and Apache 2.0 License
+//  (found in the LICENSE.Apache file in the root directory).
 
 #pragma once
 
@@ -10,6 +10,8 @@
 #include <string>
 #include <unordered_map>
 
+#include "db/read_callback.h"
+
 #include "rocksdb/db.h"
 #include "rocksdb/slice.h"
 #include "rocksdb/status.h"
@@ -17,9 +19,22 @@
 
 namespace rocksdb {
 
+struct TransactionKeyMapInfo {
+  // Earliest sequence number that is relevant to this transaction for this key
+  SequenceNumber seq;
+
+  uint32_t num_writes;
+  uint32_t num_reads;
+
+  bool exclusive;
+
+  explicit TransactionKeyMapInfo(SequenceNumber seq_no)
+      : seq(seq_no), num_writes(0), num_reads(0), exclusive(false) {}
+};
+
 using TransactionKeyMap =
     std::unordered_map<uint32_t,
-                       std::unordered_map<std::string, SequenceNumber>>;
+                       std::unordered_map<std::string, TransactionKeyMapInfo>>;
 
 class DBImpl;
 struct SuperVersion;
@@ -27,7 +42,7 @@ class WriteBatchWithIndex;
 
 class TransactionUtil {
  public:
-  // Verifies there have been no writes to this key in the db since this
+  // Verifies there have been no commits to this key in the db since this
   // sequence number.
   //
   // If cache_only is true, then this function will not attempt to read any
@@ -39,7 +54,8 @@ class TransactionUtil {
   static Status CheckKeyForConflicts(DBImpl* db_impl,
                                      ColumnFamilyHandle* column_family,
                                      const std::string& key,
-                                     SequenceNumber key_seq, bool cache_only);
+                                     SequenceNumber snap_seq, bool cache_only,
+                                     ReadCallback* snap_checker = nullptr);
 
   // For each key,SequenceNumber pair in the TransactionKeyMap, this function
   // will verify there have been no writes to the key in the db since that
@@ -56,8 +72,9 @@ class TransactionUtil {
 
  private:
   static Status CheckKey(DBImpl* db_impl, SuperVersion* sv,
-                         SequenceNumber earliest_seq, SequenceNumber key_seq,
-                         const std::string& key, bool cache_only);
+                         SequenceNumber earliest_seq, SequenceNumber snap_seq,
+                         const std::string& key, bool cache_only,
+                         ReadCallback* snap_checker = nullptr);
 };
 
 }  // namespace rocksdb
